@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RowRocket — AI-Powered Table Extraction</title>
+  <meta name="description" content="Upload any PDF or image and instantly extract clean, structured table data. No manual copy-paste. Ever again." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Custom Cursor -->
+<div class="cursor" id="cursor"></div>
+<div class="cursor-follower" id="cursorFollower"></div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ══════════════════ NAVBAR ══════════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="nav-inner">
+    <a href="#hero" class="nav-logo">
+      <span class="logo-icon">⬡</span>
+      <span>RowRocket</span>
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#hero" class="nav-link active" data-section="hero">Home</a>
+      <a href="#how-it-works" class="nav-link" data-section="how-it-works">How It Works</a>
+      <a href="#upload" class="nav-link" data-section="upload">Extract</a>
+      <a href="#features" class="nav-link" data-section="features">Features</a>
+    </div>
+    <a href="#upload" class="btn btn-primary btn-sm">Extract Now</a>
+    <button class="hamburger" id="hamburger" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mobile Overlay Menu -->
+<div class="mobile-menu" id="mobileMenu">
+  <button class="mobile-close" id="mobileClose">✕</button>
+  <a href="#hero" class="mobile-link" onclick="closeMobileMenu()">Home</a>
+  <a href="#how-it-works" class="mobile-link" onclick="closeMobileMenu()">How It Works</a>
+  <a href="#upload" class="mobile-link" onclick="closeMobileMenu()">Extract</a>
+  <a href="#features" class="mobile-link" onclick="closeMobileMenu()">Features</a>
+  <a href="#upload" class="btn btn-primary" style="margin-top:2rem;" onclick="closeMobileMenu()">Extract Now →</a>
+</div>
+
+<!-- ══════════════════ HERO ══════════════════ -->
+<section class="hero" id="hero">
+  <div class="hero-bg-glow"></div>
+  <div class="container hero-inner">
+
+    <!-- Left -->
+    <div class="hero-text" id="heroText">
+      <div class="badge-pill">
+        <span class="badge-dot"></span>
+        ✦ AI-Powered Table Extraction
+      </div>
+      <h1 class="hero-h1">
+        Extract Tables.<br/>
+        <span class="word-swap" id="wordSwap">Instantly.</span>
+      </h1>
+      <p class="hero-sub">
+        Upload any PDF or document — get clean, structured table data in seconds.
+        No manual copy-paste. Ever again.
+      </p>
+      <div class="hero-ctas">
+        <a href="#upload" class="btn btn-primary btn-lg">Extract a Table →</a>
+        <a href="#how-it-works" class="btn btn-ghost btn-lg">See How It Works</a>
+      </div>
+      <div class="hero-stats">
+        <span>⚡ Fast Processing</span>
+        <span class="stat-dot">•</span>
+        <span>📄 PDF &amp; DOCX Support</span>
+        <span class="stat-dot">•</span>
+        <span>📊 Export Ready</span>
+      </div>
+    </div>
+
+    <!-- Right — Animated Graphic -->
+    <div class="hero-graphic" id="heroGraphic">
+      <div class="hero-glow-orb"></div>
+      <div class="graphic-scene">
+        <!-- PDF Document -->
+        <div class="doc-card float-anim">
+          <div class="doc-icon">
+            <i data-lucide="file-text" class="icon-lg icon-purple"></i>
+          </div>
+          <div class="doc-lines">
+            <div class="doc-line w80"></div>
+            <div class="doc-line w60"></div>
+            <div class="doc-line w90"></div>
+            <div class="doc-line w50"></div>
+          </div>
+        </div>
+        <!-- Flow Arrow -->
+        <div class="flow-arrow">
+          <svg viewBox="0 0 40 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <line x1="20" y1="0" x2="20" y2="80" stroke="url(#flowGrad)" stroke-width="2" stroke-dasharray="6 4"/>
+            <defs>
+              <linearGradient id="flowGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+                <stop offset="0%" stop-color="#6C63FF"/>
+                <stop offset="100%" stop-color="#00D4FF"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="flow-dot" style="animation-delay:0s"></div>
+          <div class="flow-dot" style="animation-delay:0.5s"></div>
+          <div class="flow-dot" style="animation-delay:1s"></div>
+        </div>
+        <!-- Table Preview -->
+        <div class="table-preview">
+          <div class="tp-header">
+            <div class="tp-cell th">Name</div>
+            <div class="tp-cell th">Value</div>
+            <div class="tp-cell th">Status</div>
+          </div>
+          <div class="tp-row stagger-1">
+            <div class="tp-cell">Alpha</div>
+            <div class="tp-cell">1,240</div>
+            <div class="tp-cell"><span class="badge-success">✓</span></div>
+          </div>
+          <div class="tp-row stagger-2">
+            <div class="tp-cell">Beta</div>
+            <div class="tp-cell">3,890</div>
+            <div class="tp-cell"><span class="badge-success">✓</span></div>
+          </div>
+          <div class="tp-row stagger-3">
+            <div class="tp-cell">Gamma</div>
+            <div class="tp-cell">7,120</div>
+            <div class="tp-cell"><span class="badge-success">✓</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scroll indicator -->
+  <div class="scroll-hint">
+    <div class="scroll-mouse"><div class="scroll-wheel"></div></div>
+    <span>Scroll to explore</span>
+  </div>
+</section>
+
+<!-- ══════════════════ HOW IT WORKS ══════════════════ -->
+<section class="section" id="how-it-works">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">Process</p>
+      <h2 class="section-title">Simple. Powerful. Fast.</h2>
+      <p class="section-sub">Three steps from raw document to clean, exportable data.</p>
+    </div>
+    <div class="steps-row">
+      <!-- Step 1 -->
+      <div class="step-card reveal" style="--delay:0ms">
+        <div class="step-num">01</div>
+        <div class="step-icon-wrap">
+          <i data-lucide="upload-cloud" class="step-icon"></i>
+        </div>
+        <h3>Upload</h3>
+        <p>Drop your PDF or DOCX file into the upload zone — we handle the rest.</p>
+      </div>
+      <!-- Connector -->
+      <div class="step-connector reveal" style="--delay:150ms">
+        <svg viewBox="0 0 120 20" fill="none">
+          <line x1="0" y1="10" x2="120" y2="10" stroke="url(#cGrad)" stroke-width="2" stroke-dasharray="8 5" class="connector-line"/>
+          <defs>
+            <linearGradient id="cGrad" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+              <stop stop-color="#6C63FF"/><stop offset="1" stop-color="#00D4FF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <!-- Step 2 -->
+      <div class="step-card reveal" style="--delay:300ms">
+        <div class="step-num">02</div>
+        <div class="step-icon-wrap">
+          <i data-lucide="cpu" class="step-icon"></i>
+        </div>
+        <h3>Extract</h3>
+        <p>AI detects and parses every table — including complex and pipe-format tables.</p>
+      </div>
+      <!-- Connector -->
+      <div class="step-connector reveal" style="--delay:450ms">
+        <svg viewBox="0 0 120 20" fill="none">
+          <line x1="0" y1="10" x2="120" y2="10" stroke="url(#cGrad2)" stroke-width="2" stroke-dasharray="8 5" class="connector-line"/>
+          <defs>
+            <linearGradient id="cGrad2" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+              <stop stop-color="#6C63FF"/><stop offset="1" stop-color="#00D4FF"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <!-- Step 3 -->
+      <div class="step-card reveal" style="--delay:600ms">
+        <div class="step-num">03</div>
+        <div class="step-icon-wrap">
+          <i data-lucide="download" class="step-icon"></i>
+        </div>
+        <h3>Export</h3>
+        <p>Download as CSV, PDF report, or copy directly to clipboard — ready to use.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ UPLOAD ZONE ══════════════════ -->
+<section class="section upload-section" id="upload">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">Extract</p>
+      <h2 class="section-title">Upload Your Document</h2>
+      <p class="section-sub">PDF and DOCX files supported. AI extracts all tables automatically.</p>
+    </div>
+
+    <!-- Dropzone -->
+    <div class="dropzone-wrap reveal">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-content" id="dzContent">
+          <div class="dz-icon-wrap" id="dzIconWrap">
+            <i data-lucide="upload-cloud" class="dz-icon"></i>
+          </div>
+          <h3 class="dz-title">Drag &amp; Drop your file here</h3>
+          <p class="dz-sub">Supports PDF, DOCX, DOC</p>
+          <div class="dz-divider"><span>or</span></div>
+          <label for="fileInput" class="btn btn-primary">Browse Files</label>
+          <input type="file" id="fileInput" accept=".pdf,.docx,.doc" style="display:none" multiple />
+        </div>
+      </div>
+
+      <!-- File Preview Card -->
+      <div class="file-preview-card" id="filePreviewCard" style="display:none">
+        <div class="fp-files" id="fpFiles"></div>
+        <button class="fp-remove" id="fpRemove">
+          <i data-lucide="x-circle"></i> Remove files
+        </button>
+        <button class="btn btn-primary btn-lg btn-block" id="extractBtn">
+          <i data-lucide="zap"></i>
+          <span id="extractBtnText">Extract Tables →</span>
+        </button>
+        <!-- Progress -->
+        <div class="progress-wrap" id="progressWrap" style="display:none">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="progressBar"></div>
+          </div>
+          <p class="loading-msg" id="loadingMsg">Detecting table boundaries...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ RESULTS ══════════════════ -->
+<section class="section results-section" id="results" style="display:none">
+  <div class="container">
+
+    <!-- Results Header -->
+    <div class="results-header reveal">
+      <div class="results-badge">
+        <i data-lucide="check-circle-2"></i>
+        Extraction Complete
+      </div>
+      <div class="results-stats" id="resultsStats"></div>
+      <div class="results-actions">
+        <button class="btn btn-outline" id="copyAllBtn">
+          <i data-lucide="clipboard-copy"></i> Copy to Clipboard
+        </button>
+        <button class="btn btn-outline" id="csvBtn">
+          <i data-lucide="file-spreadsheet"></i> Download CSV
+        </button>
+        <button class="btn btn-primary" id="pdfBtn">
+          <i data-lucide="file-down"></i> Download PDF Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Table Tabs (for multiple tables) -->
+    <div class="table-tabs" id="tableTabs" style="display:none">
+      <div class="tab-list" id="tabList"></div>
+      <div class="tab-indicator" id="tabIndicator"></div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-bar reveal" id="searchBar">
+      <div class="search-input-wrap">
+        <i data-lucide="search" class="search-icon"></i>
+        <input type="text" id="tableSearch" placeholder="Search in table..." class="search-input" />
+      </div>
+      <span class="row-count" id="rowCount"></span>
+    </div>
+
+    <!-- Table Container -->
+    <div class="table-container reveal" id="tableContainer">
+      <table class="data-table" id="dataTable">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Empty / Error States -->
+    <div class="empty-state" id="emptyState" style="display:none">
+      <i data-lucide="table-2" class="empty-icon"></i>
+      <h3>No tables detected</h3>
+      <p>No tables were found in this document. Try uploading a different file.</p>
+      <button class="btn btn-primary" onclick="resetUpload()">Try Another File</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FEATURES ══════════════════ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">Why Us</p>
+      <h2 class="section-title">Why Use This Tool?</h2>
+      <p class="section-sub">Built for speed, accuracy, and a seamless workflow.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card reveal" style="--delay:0ms">
+        <div class="feat-icon-wrap"><i data-lucide="zap" class="feat-icon"></i></div>
+        <h3>Lightning Fast</h3>
+        <p>Results delivered in seconds — no waiting, no delays.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:100ms">
+        <div class="feat-icon-wrap"><i data-lucide="target" class="feat-icon"></i></div>
+        <h3>High Accuracy</h3>
+        <p>AI preserves table structure perfectly, even complex nested formats.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:200ms">
+        <div class="feat-icon-wrap"><i data-lucide="files" class="feat-icon"></i></div>
+        <h3>Multiple Formats</h3>
+        <p>PDF, DOCX, DOC — all supported out of the box.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:300ms">
+        <div class="feat-icon-wrap"><i data-lucide="share-2" class="feat-icon"></i></div>
+        <h3>Easy Export</h3>
+        <p>CSV, PDF report, or clipboard — your choice, one click away.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:400ms">
+        <div class="feat-icon-wrap"><i data-lucide="shield-check" class="feat-icon"></i></div>
+        <h3>Private &amp; Secure</h3>
+        <p>Files are processed server-side and never stored permanently.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:500ms">
+        <div class="feat-icon-wrap"><i data-lucide="smartphone" class="feat-icon"></i></div>
+        <h3>Fully Responsive</h3>
+        <p>Works beautifully on any screen — desktop, tablet, or mobile.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FOOTER ══════════════════ -->
+<footer class="footer">
+  <div class="footer-top-border"></div>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="nav-logo"><span class="logo-icon">⬡</span> RowRocket</span>
+        <p>Built with ❤️ for developers</p>
+      </div>
+      <nav class="footer-nav">
+        <a href="#hero">Home</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#upload">Extract</a>
+        <a href="#features">Features</a>
+      </nav>
+      <div class="footer-right">
+        <a href="https://github.com/notorious404" target="_blank" rel="noopener" class="github-link">
+          <i data-lucide="github"></i> GitHub
+        </a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>Made by <strong>Shantanu Yadav</strong> — Frontend Developer</p>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
