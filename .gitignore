@@ -1,1 +1,88 @@
+# ==============================================================================
+# Rust (Rocket Framework) Outputs & Dependencies
+# ==============================================================================
+/target/
+**/*.rs.bk
+Cargo.lock
 
+# ==============================================================================
+# Python Environment & Local Caching
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# ==============================================================================
+# Data Parsing & Database Files (CSV/SQLite/Logs)
+# ==============================================================================
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.sqlite3
+*.log
+/logs/
+/data/
+/output/
+
+# ==============================================================================
+# Node / Frontend Artifacts
+# ==============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
+dist/
+build/
+.next/
+
+# ==============================================================================
+# Environment Variables & Secrets (CRITICAL SECURITY)
+# ==============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.secret
+Rocket.toml      # Ignore if Rocket config contains local secrets/passwords
+
+# ==============================================================================
+# IDEs and Text Editors
+# ==============================================================================
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+
+# JetBrains (IntelliJ, RustRover, PyCharm, etc.)
+.idea/
+
+# General editor backups
+*.swp
+*.swo
+*~
+
+# ==============================================================================
+# Operating System Garbage
+# ==============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
