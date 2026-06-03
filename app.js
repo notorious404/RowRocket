@@ -1,5 +1,53 @@
 // app.js
-lucide.createIcons();
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  deleteUser,
+  updateEmail,
+  updateProfile
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+
+/*
+  FIREBASE FRONTEND CONFIG GOES HERE LATER
+  Paste the Firebase Web App config from Firebase Console in this spot when
+  you convert this file to Firebase Auth/Firestore.
+*/
+  const firebaseConfig = {
+    apiKey: "AIzaSyANFU6X9TvHk30tiAFuBFbJNTvg4WVIu5c",
+    authDomain: "rowrocket-eb754.firebaseapp.com",
+    projectId: "rowrocket-eb754",
+    storageBucket: "rowrocket-eb754.firebasestorage.app",
+    messagingSenderId: "898208397379",
+    appId: "1:898208397379:web:a8b28eb4ba349400c3bcf6"
+  };
+
+const app = initializeApp(firebaseConfig);
+const firebaseAuth = getAuth(app);
+const firestoreDb = getFirestore(app);
+
+function refreshIcons() {
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+}
+
+refreshIcons();
+
 
 const authState = {
   token: localStorage.getItem('rowrocket_token') || '',
@@ -7,15 +55,18 @@ const authState = {
 };
 const ANON_TRIAL_KEY = 'rowrocket_anonymous_trial_used';
 const THEME_KEY = 'rowrocket_theme';
+const NAME_CACHE_KEY = 'rowrocket_name_cache';
 const emailPattern = /^[A-Za-z][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
-function authHeaders(extra = {}) {
-  return authState.token ? { ...extra, Authorization: `Bearer ${authState.token}` } : extra;
+async function authHeaders(extra = {}) {
+  if (!firebaseAuth.currentUser) return extra;
+  const token = await firebaseAuth.currentUser.getIdToken();
+  return { ...extra, Authorization: `Bearer ${token}` };
 }
 
 async function authFetch(url, options = {}) {
-  const headers = authHeaders(options.headers || {});
+  const headers = await authHeaders(options.headers || {});
   return fetch(url, { ...options, headers });
 }
 
@@ -45,6 +96,33 @@ function isStrongPassword(password) {
   return passwordPattern.test(password || '');
 }
 
+function getNameCache() {
+  try {
+    return JSON.parse(localStorage.getItem(NAME_CACHE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function cacheName(email, name) {
+  if (!email || !name) return;
+  const cache = getNameCache();
+  cache[email.toLowerCase()] = name;
+  localStorage.setItem(NAME_CACHE_KEY, JSON.stringify(cache));
+}
+
+function nameFromEmail(email) {
+  const local = (email || '').split('@')[0] || 'User';
+  const letters = local.replace(/[0-9._-]+/g, ' ').trim();
+  const first = (letters.split(/\s+/)[0] || local || 'User').replace(/[^a-zA-Z]/g, '');
+  return first ? first.charAt(0).toUpperCase() + first.slice(1) : 'User';
+}
+
+function resolveDisplayName(firebaseUser, profile = {}) {
+  const cached = getNameCache()[(firebaseUser.email || '').toLowerCase()];
+  return profile.name || firebaseUser.displayName || cached || nameFromEmail(firebaseUser.email);
+}
+
 function closeAuth() {
   document.getElementById('authGate').classList.remove('open');
 }
@@ -56,11 +134,16 @@ function switchAuthTab(tab) {
   document.getElementById('forgotForm').classList.toggle('active', tab === 'forgot');
 }
 
+function onClick(id, handler) {
+  const element = document.getElementById(id);
+  if (element) element.addEventListener('click', handler);
+}
+
 function setAuth(token, user) {
   authState.token = token;
   authState.user = user;
   localStorage.setItem('rowrocket_token', token);
-  if (user.theme_preference) applyTheme(user.theme_preference, { persistRemote: false });
+  applyTheme('dark', { persistRemote: false });
   renderAuthUi();
 }
 
@@ -88,8 +171,8 @@ function renderAuthUi() {
   document.getElementById('verifyStatus').textContent = authState.user.email_verified
     ? 'Email verified. Your account is fully active.'
     : `Email not verified. ${remaining} unverified extraction${remaining === 1 ? '' : 's'} remaining.`;
-  document.getElementById('settingsThemeLabel').textContent = `Current theme: ${getCurrentTheme() === 'light' ? 'Light' : 'Dark'}`;
-  lucide.createIcons();
+  document.getElementById('verifyBox').style.display = authState.user.email_verified ? 'none' : 'block';
+  refreshIcons();
 }
 
 function getCurrentTheme() {
@@ -97,16 +180,12 @@ function getCurrentTheme() {
 }
 
 async function saveThemePreference(theme) {
-  if (!authState.token || !authState.user) return;
+  if (!firebaseAuth.currentUser || !authState.user) return;
   try {
-    const res = await authFetch('/api/auth/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme_preference: theme })
+    await updateDoc(doc(firestoreDb, "users", firebaseAuth.currentUser.uid), {
+      theme_preference: theme
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    authState.user = data.user;
+    authState.user.theme_preference = theme;
     renderAuthUi();
   } catch (err) {
     showToast(err.message || 'Could not save theme preference.', 'error');
@@ -117,12 +196,7 @@ function applyTheme(theme, options = {}) {
   const persistRemote = options.persistRemote !== false;
   document.documentElement.dataset.theme = theme;
   localStorage.setItem(THEME_KEY, theme);
-  document.querySelectorAll('#themeToggle i, #mobileThemeToggle i, #settingsThemeToggle i').forEach(icon => {
-    icon.setAttribute('data-lucide', theme === 'light' ? 'moon' : 'sun');
-  });
-  const label = document.getElementById('settingsThemeLabel');
-  if (label) label.textContent = `Current theme: ${theme === 'light' ? 'Light' : 'Dark'}`;
-  lucide.createIcons();
+  refreshIcons();
   if (persistRemote) saveThemePreference(theme);
 }
 
@@ -131,49 +205,52 @@ function toggleTheme() {
   applyTheme(nextTheme);
 }
 
-async function refreshMe() {
-  if (!authState.token) {
-    renderAuthUi();
-    return;
-  }
-  try {
-    const res = await authFetch('/api/auth/me');
-    if (!res.ok) throw new Error('Session expired');
-    const data = await res.json();
-    authState.user = data.user;
-    if (data.user.theme_preference) applyTheme(data.user.theme_preference, { persistRemote: false });
-    renderAuthUi();
-  } catch {
-    clearAuth();
-  }
+function watchFirebaseAuth() {
+  onAuthStateChanged(firebaseAuth, async firebaseUser => {
+    try {
+      if (!firebaseUser) {
+        clearAuth();
+        return;
+      }
+
+      let profile = {};
+      try {
+        const profileSnap = await getDoc(doc(firestoreDb, "users", firebaseUser.uid));
+        profile = profileSnap.data() || {};
+      } catch (err) {
+        console.warn('Could not load Firestore profile:', err);
+      }
+
+      setAuth(await firebaseUser.getIdToken(), {
+        id: firebaseUser.uid,
+        name: resolveDisplayName(firebaseUser, profile),
+        email: firebaseUser.email,
+        email_verified: firebaseUser.emailVerified,
+        unverified_uses: profile.unverified_uses || 0,
+        free_unverified_uses: profile.free_unverified_uses || 4,
+        theme_preference: profile.theme_preference || getCurrentTheme()
+      });
+    } catch (err) {
+      console.error('Firebase auth state failed:', err);
+    }
+  });
 }
 
 async function loadAuthHistory() {
-  if (!authState.token) return;
-  const res = await authFetch('/api/auth/history');
-  const data = await res.json();
-  const history = data.history || [];
-  document.getElementById('authHistory').innerHTML = history.length ? history.map(item => `
-    <div class="history-item">
-      <strong>${item.action.replaceAll('_', ' ')}</strong>
-      <span>${new Date(item.at).toLocaleString()} · ${item.ip}</span>
-    </div>
-  `).join('') : '<p class="profile-email">No history yet.</p>';
+  document.getElementById('authHistory').innerHTML =
+    '<p class="profile-email">Firebase auth history is not available on frontend. Login history needs backend Admin logging.</p>';
 }
 
 document.querySelectorAll('.auth-tab').forEach(btn => btn.addEventListener('click', () => switchAuthTab(btn.dataset.authTab)));
-document.getElementById('signinOpenBtn').addEventListener('click', () => openAuth('signin'));
-document.getElementById('signupOpenBtn').addEventListener('click', () => openAuth('signup'));
-document.getElementById('mobileSigninBtn').addEventListener('click', () => openAuth('signin'));
-document.getElementById('mobileSignupBtn').addEventListener('click', () => openAuth('signup'));
-document.getElementById('authClose').addEventListener('click', closeAuth);
-document.getElementById('forgotPasswordBtn').addEventListener('click', () => switchAuthTab('forgot'));
-document.getElementById('createAccountFirstBtn').addEventListener('click', () => switchAuthTab('signup'));
-document.getElementById('alreadyHaveAccountBtn').addEventListener('click', () => switchAuthTab('signin'));
-document.getElementById('backToSigninBtn').addEventListener('click', () => switchAuthTab('signin'));
-document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-document.getElementById('mobileThemeToggle').addEventListener('click', toggleTheme);
-document.getElementById('settingsThemeToggle').addEventListener('click', toggleTheme);
+onClick('signinOpenBtn', () => openAuth('signin'));
+onClick('signupOpenBtn', () => openAuth('signup'));
+onClick('mobileSigninBtn', () => openAuth('signin'));
+onClick('mobileSignupBtn', () => openAuth('signup'));
+onClick('authClose', closeAuth);
+onClick('forgotPasswordBtn', () => switchAuthTab('forgot'));
+onClick('createAccountFirstBtn', () => switchAuthTab('signup'));
+onClick('alreadyHaveAccountBtn', () => switchAuthTab('signin'));
+onClick('backToSigninBtn', () => switchAuthTab('signin'));
 document.getElementById('profileOpenBtn').addEventListener('click', async () => {
   document.getElementById('profilePanel').classList.add('open');
   await loadAuthHistory();
@@ -187,14 +264,31 @@ document.getElementById('profileClose').addEventListener('click', () => document
 document.getElementById('signinForm').addEventListener('submit', async e => {
   e.preventDefault();
   try {
-    const res = await fetch('/api/auth/signin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: signinEmail.value, password: signinPassword.value })
+    const userCredential = await signInWithEmailAndPassword(
+      firebaseAuth,
+      signinEmail.value,
+      signinPassword.value
+    );
+
+    const firebaseUser = userCredential.user;
+    let profile = {};
+    try {
+      const profileSnap = await getDoc(doc(firestoreDb, "users", firebaseUser.uid));
+      profile = profileSnap.data() || {};
+    } catch (err) {
+      console.warn('Could not load Firestore profile:', err);
+    }
+
+    setAuth(await firebaseUser.getIdToken(), {
+      id: firebaseUser.uid,
+      name: resolveDisplayName(firebaseUser, profile),
+      email: firebaseUser.email,
+      email_verified: firebaseUser.emailVerified,
+      unverified_uses: profile.unverified_uses || 0,
+      free_unverified_uses: profile.free_unverified_uses || 4,
+      theme_preference: profile.theme_preference || "dark"
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    setAuth(data.token, data.user);
+
     closeAuth();
     showToast('Signed in successfully.');
   } catch (err) {
@@ -204,28 +298,57 @@ document.getElementById('signinForm').addEventListener('submit', async e => {
 
 document.getElementById('signupForm').addEventListener('submit', async e => {
   e.preventDefault();
+
   const email = signupEmail.value.trim();
   const password = signupPassword.value;
+
   if (!isValidEmail(email)) {
     showValidationAlert('Enter a valid email. Email must not start with a number.');
     return;
   }
+
   if (!isStrongPassword(password)) {
     showValidationAlert('Password must be at least 8 characters and include uppercase, lowercase, number, and special character.');
     return;
   }
+
   try {
-    const res = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: signupName.value, email, password, theme_preference: getCurrentTheme() })
+    const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
+    const firebaseUser = userCredential.user;
+    const displayName = signupName.value.trim() || 'User';
+
+    await updateProfile(firebaseUser, { displayName });
+    cacheName(email, displayName);
+    await sendEmailVerification(firebaseUser);
+
+    const profile = {
+      name: displayName,
+      email,
+      email_verified: firebaseUser.emailVerified,
+      unverified_uses: 0,
+      free_unverified_uses: 4,
+      theme_preference: getCurrentTheme(),
+      created_at: serverTimestamp()
+    };
+
+    try {
+    await setDoc(doc(firestoreDb, "users", firebaseUser.uid), profile);
+    } catch (err) {
+      console.warn('Could not save Firestore profile:', err);
+    }
+
+    setAuth(await firebaseUser.getIdToken(), {
+      id: firebaseUser.uid,
+      name: displayName,
+      email,
+      email_verified: firebaseUser.emailVerified,
+      unverified_uses: 0,
+      free_unverified_uses: 4,
+      theme_preference: getCurrentTheme()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    setAuth(data.token, data.user);
-    document.getElementById('devOtp').textContent = `Dev OTP: ${data.otp_dev}`;
+
     closeAuth();
-    showToast('Account created. Verify your email to unlock unlimited use.');
+    showToast('Account created. Verification email sent.');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -233,104 +356,67 @@ document.getElementById('signupForm').addEventListener('submit', async e => {
 
 document.getElementById('sendResetOtpBtn').addEventListener('click', async () => {
   const email = forgotEmail.value.trim();
-  if (!isValidEmail(email)) {
-    showValidationAlert('Enter a valid email. Email must not start with a number.');
-    return;
-  }
-  try {
-    const res = await fetch('/api/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    document.getElementById('resetDevOtp').textContent = `Reset OTP: ${data.otp_dev}`;
-    showToast('Password reset code generated.');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-});
 
-document.getElementById('forgotForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const email = forgotEmail.value.trim();
-  const password = resetPassword.value;
   if (!isValidEmail(email)) {
     showValidationAlert('Enter a valid email. Email must not start with a number.');
     return;
   }
-  if (!isStrongPassword(password)) {
-    showValidationAlert('Password must be at least 8 characters and include uppercase, lowercase, number, and special character.');
-    return;
-  }
+
   try {
-    const res = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp: resetOtp.value, password })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    showToast('Password updated. Please sign in.');
-    switchAuthTab('signin');
+    await sendPasswordResetEmail(firebaseAuth, email);
+    showToast('Password reset email sent.');
   } catch (err) {
     showToast(err.message, 'error');
   }
 });
 
 document.getElementById('sendOtpBtn').addEventListener('click', async () => {
-  const res = await authFetch('/api/auth/send-otp', { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-  document.getElementById('devOtp').textContent = `Dev OTP: ${data.otp_dev}`;
-  showToast('OTP generated.');
+  if (!firebaseAuth.currentUser) return showToast('Please sign in first.', 'error');
+  await sendEmailVerification(firebaseAuth.currentUser);
+  showToast('Verification email sent.');
 });
 
 document.getElementById('verifyOtpBtn').addEventListener('click', async () => {
-  const res = await authFetch('/api/auth/verify-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ otp: otpInput.value })
+  if (!firebaseAuth.currentUser) return showToast('Please sign in first.', 'error');
+  await firebaseAuth.currentUser.reload();
+  const verified = firebaseAuth.currentUser.emailVerified;
+
+  await updateDoc(doc(firestoreDb, "users", firebaseAuth.currentUser.uid), {
+    email_verified: verified
   });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-  authState.user = data.user;
+
+  authState.user.email_verified = verified;
   renderAuthUi();
-  showToast('Email verified.');
+
+  showToast(verified ? 'Email verified.' : 'Please click the verification link sent to your email first.', verified ? 'success' : 'error');
 });
 
 document.getElementById('changeEmailBtn').addEventListener('click', async () => {
-  if (!isValidEmail(newEmailInput.value)) {
+  const newEmail = newEmailInput.value.trim();
+
+  if (!isValidEmail(newEmail)) {
     showValidationAlert('Enter a valid email. Email must not start with a number.');
     return;
   }
-  const res = await authFetch('/api/auth/change-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: newEmailInput.value })
-  });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-  document.getElementById('devOtp').textContent = `Email change OTP: ${data.otp_dev}`;
-  showToast('Email change OTP generated.');
-});
 
-document.getElementById('confirmEmailBtn').addEventListener('click', async () => {
-  const res = await authFetch('/api/auth/confirm-email-change', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ otp: emailChangeOtpInput.value })
-  });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-  authState.user = data.user;
-  renderAuthUi();
-  showToast('Email changed.');
+  try {
+    await updateEmail(firebaseAuth.currentUser, newEmail);
+    await updateDoc(doc(firestoreDb, "users", firebaseAuth.currentUser.uid), {
+      email: newEmail,
+      email_verified: firebaseAuth.currentUser.emailVerified
+    });
+
+    authState.user.email = newEmail;
+    authState.user.email_verified = firebaseAuth.currentUser.emailVerified;
+    renderAuthUi();
+    showToast('Email changed.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
-  if (authState.token) await authFetch('/api/auth/logout', { method: 'POST' });
+  await signOut(firebaseAuth);
   clearAuth();
   document.getElementById('profilePanel').classList.remove('open');
   showToast('Signed out.');
@@ -338,37 +424,46 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
   if (!confirm('Delete this account permanently?')) return;
-  const res = await authFetch('/api/auth/delete-account', { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok) return showToast(data.error, 'error');
-  clearAuth();
-  document.getElementById('profilePanel').classList.remove('open');
-  showToast('Account deleted.');
+
+  try {
+    const uid = firebaseAuth.currentUser.uid;
+    await deleteDoc(doc(firestoreDb, "users", uid));
+    await deleteUser(firebaseAuth.currentUser);
+
+    clearAuth();
+    document.getElementById('profilePanel').classList.remove('open');
+    showToast('Account deleted.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
-applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
-refreshMe();
+applyTheme('dark', { persistRemote: false });
+watchFirebaseAuth();
 
 // Custom Cursor
 const cursor = document.getElementById('cursor');
 const cursorFollower = document.getElementById('cursorFollower');
 let mouseX = 0, mouseY = 0, followerX = 0, followerY = 0;
 
-document.addEventListener('mousemove', (e) => {
-  mouseX = e.clientX; mouseY = e.clientY;
-  cursor.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
-});
-function animateFollower() {
-  followerX += (mouseX - followerX) * 0.15;
-  followerY += (mouseY - followerY) * 0.15;
-  cursorFollower.style.transform = `translate(${followerX}px, ${followerY}px)`;
-  requestAnimationFrame(animateFollower);
+if (cursor && cursorFollower && window.matchMedia('(pointer: fine)').matches) {
+  document.documentElement.classList.add('custom-cursor-ready');
+  document.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    cursor.style.transform = `translate(${mouseX - 4}px, ${mouseY - 4}px)`;
+  });
+  function animateFollower() {
+    followerX += (mouseX - followerX) * 0.15;
+    followerY += (mouseY - followerY) * 0.15;
+    cursorFollower.style.transform = `translate(${followerX - 15}px, ${followerY - 15}px)`;
+    requestAnimationFrame(animateFollower);
+  }
+  animateFollower();
+  document.querySelectorAll('a, button, input, .dropzone').forEach(el => {
+    el.addEventListener('mouseenter', () => cursorFollower.classList.add('hover'));
+    el.addEventListener('mouseleave', () => cursorFollower.classList.remove('hover'));
+  });
 }
-animateFollower();
-document.querySelectorAll('a, button, input, .dropzone').forEach(el => {
-  el.addEventListener('mouseenter', () => cursorFollower.classList.add('hover'));
-  el.addEventListener('mouseleave', () => cursorFollower.classList.remove('hover'));
-});
 
 // Navbar Scroll
 const navbar = document.getElementById('navbar');
@@ -419,7 +514,7 @@ function showToast(message, type = 'success') {
   const icon = type === 'success' ? 'check-circle-2' : 'alert-circle';
   toast.innerHTML = `<i data-lucide="${icon}" class="toast-icon"></i> <span>${message}</span>`;
   container.appendChild(toast);
-  lucide.createIcons();
+  refreshIcons();
   setTimeout(() => {
     toast.style.animation = 'fadeOut 0.3s forwards';
     setTimeout(() => toast.remove(), 300);
@@ -453,6 +548,15 @@ let selectedFiles = [];
 dropzone.addEventListener('drop', e => {
   const dt = e.dataTransfer;
   if (dt.files && dt.files.length > 0) handleFiles(dt.files);
+});
+dropzone.addEventListener('click', e => {
+  if (e.target.closest('label[for="fileInput"]')) return;
+  if (!authState.user && hasUsedAnonymousTrial()) {
+    openAuth('signup');
+    showToast('Please sign up and sign in to continue extracting.', 'error');
+    return;
+  }
+  fileInput.click();
 });
 browseLabel.addEventListener('click', e => {
   if (!authState.user && hasUsedAnonymousTrial()) {
@@ -502,7 +606,7 @@ function handleFiles(files) {
       <i data-lucide="check" class="toast-icon success"></i>
     </div>
   `).join('');
-  lucide.createIcons();
+  refreshIcons();
 }
 
 fpRemove.addEventListener('click', () => resetUpload());
@@ -552,9 +656,10 @@ extractBtn.addEventListener('click', async () => {
   selectedFiles.forEach(f => formData.append('files', f));
 
   try {
+    const headers = authState.user ? await authHeaders() : { 'X-Anonymous-Trial': '1' };
     const res = await fetch('/api/extract', {
       method: 'POST',
-      headers: authState.user ? authHeaders() : { 'X-Anonymous-Trial': '1' },
+      headers,
       body: formData
     });
     clearInterval(msgInterval);
@@ -574,14 +679,20 @@ extractBtn.addEventListener('click', async () => {
       if (data.unverified_uses_remaining > 0) showToast(`${data.unverified_uses_remaining} unverified uses remaining.`);
     }
     
+    document.getElementById('results').style.display = 'block';
+    renderResults();
     if (extractedTables.length === 0) {
       document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('searchBar').style.display = 'none';
+      document.getElementById('tableContainer').style.display = 'none';
+      showToast("Report generated. No tables detected in this file.");
     } else {
-      document.getElementById('results').style.display = 'block';
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('searchBar').style.display = 'flex';
+      document.getElementById('tableContainer').style.display = 'block';
       showToast("Extraction Complete!");
-      renderResults();
-      document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
     }
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
     clearInterval(msgInterval);
     showToast(err.message, "error");
@@ -618,6 +729,12 @@ function renderResults() {
     tabsContainer.style.display = 'none';
   }
   currentTableIndex = 0;
+  if (extractedTables.length === 0) {
+    document.getElementById('tableHead').innerHTML = '';
+    document.getElementById('tableBody').innerHTML = '';
+    document.getElementById('rowCount').textContent = 'No rows to show';
+    return;
+  }
   renderTableData();
 }
 
