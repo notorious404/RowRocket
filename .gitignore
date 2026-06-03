@@ -12,12 +12,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 auth_data.json
+firebase-service-account.json
+.env
 *.so
 .Python
-
+env/
 venv/
 .venv/
-
+ENV/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -50,8 +52,9 @@ build/
 # ==============================================================================
 # Environment Variables & Secrets (CRITICAL SECURITY)
 # ==============================================================================
-
-
+.env
+.env.local
+.env.*.local
 *.pem
 *.key
 *.secret
