@@ -17,7 +17,17 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from pdf_doc_loader import save_and_read_uploaded_files
+try:
+    import firebase_admin
+    from firebase_admin import auth as firebase_auth
+    from firebase_admin import credentials, firestore
+except ImportError:
+    firebase_admin = None
+    firebase_auth = None
+    credentials = None
+    firestore = None
+
+from pdf_doc_loader import save_and_read_uploaded_files, extract_docx_tables
 from pdf_table_extractor import TableExtractor
 from table_pdf_report import TableReportGenerator
 from utils import ensure_directories, build_report_name
@@ -25,10 +35,58 @@ from utils import ensure_directories, build_report_name
 app = Flask(__name__, static_folder=".", static_url_path="/static")
 CORS(app)
 
+"""
+FIREBASE BACKEND CREDENTIALS GO HERE LATER
+When you switch Flask to Firebase Admin, do not paste the service account JSON
+directly into this file. Use one of these safer options:
+
+1. Local testing:
+   Save the private key file as firebase-service-account.json in this folder.
+   Keep it out of GitHub using .gitignore.
+
+2. Deployment:
+   Put Firebase Admin credentials in Render/Railway environment variables.
+
+Example future setup:
+import firebase_admin
+from firebase_admin import credentials
+
+cred = credentials.Certificate("firebase-service-account.json")
+firebase_admin.initialize_app(cred)
+
+Never upload firebase-service-account.json, private_key, or .env to GitHub.
+"""
+
 AUTH_DB_PATH = os.path.join(".", "auth_data.json")
+FIREBASE_SERVICE_ACCOUNT_PATH = os.path.join(".", "firebase-service-account.json")
 FREE_UNVERIFIED_USES = 4
 EMAIL_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
+firebase_db = None
+
+
+def _init_firebase_admin():
+    """Initialize Firebase Admin from env JSON or local service account file."""
+    global firebase_db
+    if firebase_admin is None or firebase_admin._apps:
+        if firebase_admin is not None and firebase_admin._apps and firebase_db is None:
+            firebase_db = firestore.client()
+        return firebase_db is not None
+
+    service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if service_account_json:
+        cred = credentials.Certificate(json.loads(service_account_json))
+    elif os.path.exists(FIREBASE_SERVICE_ACCOUNT_PATH):
+        cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
+    else:
+        return False
+
+    firebase_admin.initialize_app(cred)
+    firebase_db = firestore.client()
+    return True
+
+
+_init_firebase_admin()
 
 
 def _now_iso():
@@ -93,6 +151,23 @@ def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        firebase_user = _get_firebase_user(token)
+        if firebase_user:
+            request.auth_provider = "firebase"
+            request.firebase_user = firebase_user
+            request.current_user = firebase_user["profile"]
+            return fn(*args, **kwargs)
+
+        if token and firebase_db is None:
+            request.auth_provider = "local_unverified_firebase"
+            request.current_user = {
+                "id": "firebase-local",
+                "email_verified": True,
+                "unverified_uses": 0,
+                "free_unverified_uses": FREE_UNVERIFIED_USES,
+            }
+            return fn(*args, **kwargs)
+
         db = _load_auth_db()
         session = db["sessions"].get(token)
         if not token or not session:
@@ -110,15 +185,69 @@ def _require_auth(fn):
 def _get_optional_auth():
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
     if not token:
-        return None, None
+        return None, None, None
+    firebase_user = _get_firebase_user(token)
+    if firebase_user:
+        return "firebase", firebase_user, None
+    if firebase_db is None:
+        return "local_unverified_firebase", {
+            "id": "firebase-local",
+            "email_verified": True,
+            "unverified_uses": 0,
+            "free_unverified_uses": FREE_UNVERIFIED_USES,
+        }, None
     db = _load_auth_db()
     session = db["sessions"].get(token)
     if not session:
-        return None, None
+        return None, None, None
     user = db["users"].get(session["user_id"])
     if not user:
-        return None, None
-    return db, user
+        return None, None, None
+    return "local", user, db
+
+
+def _get_firebase_user(token):
+    if not token or firebase_auth is None or firebase_db is None:
+        return None
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        uid = decoded["uid"]
+        user_ref = firebase_db.collection("users").document(uid)
+        snapshot = user_ref.get()
+        profile = snapshot.to_dict() or {}
+        return {
+            "uid": uid,
+            "decoded": decoded,
+            "ref": user_ref,
+            "profile": {
+                "id": uid,
+                "name": profile.get("name") or decoded.get("email", "User"),
+                "email": decoded.get("email") or profile.get("email", ""),
+                "email_verified": decoded.get("email_verified", False),
+                "unverified_uses": profile.get("unverified_uses", 0),
+                "free_unverified_uses": profile.get("free_unverified_uses", FREE_UNVERIFIED_USES),
+                "theme_preference": profile.get("theme_preference", "dark"),
+            },
+        }
+    except Exception:
+        return None
+
+
+def _consume_firebase_unverified_use(firebase_user):
+    profile = firebase_user["profile"]
+    if profile.get("email_verified"):
+        return None
+    used = int(profile.get("unverified_uses", 0))
+    limit = int(profile.get("free_unverified_uses", FREE_UNVERIFIED_USES))
+    if used >= limit:
+        return jsonify({
+            "error": "Email verification required. You have used all 4 free unverified extractions.",
+            "requires_verification": True,
+        }), 403
+    new_used = used + 1
+    firebase_user["ref"].set({"unverified_uses": new_used}, merge=True)
+    profile["unverified_uses"] = new_used
+    return limit - new_used
 
 
 def _validate_email(email):
@@ -375,10 +504,17 @@ def extract():
     if not uploaded_files or all(f.filename == "" for f in uploaded_files):
         return jsonify({"error": "No files selected"}), 400
 
-    auth_db, current_user = _get_optional_auth()
+    auth_provider, current_user, auth_db = _get_optional_auth()
     anonymous_trial = request.headers.get("X-Anonymous-Trial") == "1"
     usage_state = None
-    if current_user:
+    if auth_provider == "firebase":
+        usage_state = _consume_firebase_unverified_use(current_user)
+        current_user = current_user["profile"]
+        if not isinstance(usage_state, int) and usage_state is not None:
+            return usage_state
+    elif auth_provider == "local_unverified_firebase":
+        usage_state = None
+    elif auth_provider == "local":
         usage_state = _consume_unverified_use(auth_db, current_user)
         if not isinstance(usage_state, int) and usage_state is not None:
             return usage_state
@@ -404,6 +540,13 @@ def extract():
     extractor = TableExtractor()
     all_tables: List[Dict[str, Any]] = []
     for path, text in file_texts.items():
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".docx":
+            direct_tables = extract_docx_tables(path)
+            if direct_tables:
+                all_tables.extend(direct_tables)
+                continue
+
         if not text.strip():
             continue
         fname = os.path.basename(path)
@@ -429,12 +572,15 @@ def extract():
 
 
 @app.route("/api/download-report", methods=["GET"])
-@_require_auth
 def download_report():
     """Download the generated PDF report."""
     path = request.args.get("path", "")
     if not path or not os.path.isfile(path):
         return jsonify({"error": "Report not found"}), 404
+    safe_root = os.path.abspath("output_reports")
+    requested = os.path.abspath(path)
+    if not requested.startswith(safe_root):
+        return jsonify({"error": "Invalid report path"}), 400
     return send_file(
         path,
         as_attachment=True,
@@ -471,4 +617,4 @@ def download_csv():
 
 if __name__ == "__main__":
     ensure_directories()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=False, use_reloader=False, host="0.0.0.0", port=5000)
