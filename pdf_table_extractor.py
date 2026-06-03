@@ -1,11 +1,11 @@
 # pdf_table_extractor.py
 import json
 from typing import List, Dict, Any
-from openai import OpenAI
+import google.generativeai as genai
 
-from config import MODEL_NAME, MAX_TOKENS, TEMPERATURE
+from config import GEMINI_API_KEY, MODEL_NAME, MAX_TOKENS, TEMPERATURE
 
-client = OpenAI()
+genai.configure(api_key=GEMINI_API_KEY)
 
 class TableExtractor:
     def __init__(self, model_name: str = MODEL_NAME,
@@ -21,6 +21,7 @@ You are a table extraction engine.
 
 Input comes from a document: {file_name}.
 The text may contain:
+- DOCX TABLE blocks that were converted from real Microsoft Word tables
 - visually formatted tables
 - markdown-style pipe tables, for example:
   | Col1 | Col2 |
@@ -54,20 +55,40 @@ Rules:
 - Each table must have the same number of items in every row as in "headers".
 - If no tables are found, return {{"tables": []}}.
 - Normalize pipe tables and other styles into rows and columns.
+- Treat each "DOCX TABLE N:" block as a real table and extract it even if it has many rows.
+- Preserve all rows from DOCX tables unless a row is completely empty.
 - Do not include any explanation, only JSON.
         """.strip()
 
     def extract_tables_from_text(self, file_name: str, text: str) -> List[Dict[str, Any]]:
         prompt = self._build_prompt(file_name, text)
 
-        response = client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt + "\n\n" + text}],
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-        )
+        model_names = [
+            self.model_name,
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-flash-latest",
+        ]
+        response = None
+        last_error = None
+        for model_name in dict.fromkeys(model_names):
+            try:
+                model = genai.GenerativeModel(
+                    model_name,
+                    generation_config={
+                        "temperature": self.temperature,
+                        "max_output_tokens": self.max_tokens,
+                        "response_mime_type": "application/json",
+                    },
+                )
+                response = model.generate_content(prompt + "\n\n" + text)
+                break
+            except Exception as exc:
+                last_error = exc
+        if response is None:
+            raise RuntimeError(f"Gemini table extraction failed: {last_error}")
 
-        content = response.choices[0].message.content.strip()
+        content = (response.text or "").strip()
         try:
             data = json.loads(content)
         except json.JSONDecodeError:
