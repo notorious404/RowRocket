@@ -14,10 +14,10 @@ __pycache__/
 auth_data.json
 *.so
 .Python
-env/
+
 venv/
 .venv/
-ENV/
+
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -50,9 +50,8 @@ build/
 # ==============================================================================
 # Environment Variables & Secrets (CRITICAL SECURITY)
 # ==============================================================================
-.env
-.env.local
-.env.*.local
+
+
 *.pem
 *.key
 *.secret
