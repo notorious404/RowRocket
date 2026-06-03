@@ -11,6 +11,7 @@ Cargo.lock
 __pycache__/
 *.py[cod]
 *$py.class
+auth_data.json
 *.so
 .Python
 env/
