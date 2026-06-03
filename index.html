@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=report-name-fix-1" />
 </head>
 <body>
 
@@ -46,10 +46,7 @@
     <form class="auth-form" id="forgotForm">
       <h2>Reset password</h2>
       <input class="auth-input" type="email" id="forgotEmail" placeholder="Account email" required />
-      <button class="btn btn-outline btn-block" type="button" id="sendResetOtpBtn">Send reset code</button>
-      <input class="auth-input" id="resetOtp" placeholder="Reset OTP" />
-      <input class="auth-input" type="password" id="resetPassword" placeholder="New strong password" />
-      <button class="btn btn-primary btn-block" type="submit">Update password</button>
+      <button class="btn btn-outline btn-block" type="button" id="sendResetOtpBtn">Send reset email</button>
       <button class="auth-link-btn" type="button" id="backToSigninBtn">Back to sign in</button>
       <p class="dev-otp" id="resetDevOtp"></p>
     </form>
@@ -68,31 +65,16 @@
   <div class="verify-box" id="verifyBox">
     <p id="verifyStatus"></p>
     <div class="inline-form">
-      <input class="auth-input" id="otpInput" placeholder="Email OTP" />
-      <button class="btn btn-primary" id="verifyOtpBtn">Verify</button>
+      <button class="btn btn-primary btn-block" id="verifyOtpBtn">Check verification</button>
     </div>
-    <button class="btn btn-outline btn-block" id="sendOtpBtn">Send OTP</button>
+    <button class="btn btn-outline btn-block" id="sendOtpBtn">Send verification email</button>
     <p class="dev-otp" id="devOtp"></p>
-  </div>
-  <div class="setting-block">
-    <h3>Theme</h3>
-    <div class="setting-row">
-      <span id="settingsThemeLabel">Current theme: Dark</span>
-      <button class="theme-toggle setting-theme-toggle" id="settingsThemeToggle" aria-label="Change theme">
-        <i data-lucide="sun"></i>
-        <span>Change</span>
-      </button>
-    </div>
   </div>
   <div class="setting-block">
     <h3>Change email</h3>
     <div class="inline-form">
       <input class="auth-input" type="email" id="newEmailInput" placeholder="New email" />
-      <button class="btn btn-outline" id="changeEmailBtn">Send code</button>
-    </div>
-    <div class="inline-form">
-      <input class="auth-input" id="emailChangeOtpInput" placeholder="Change OTP" />
-      <button class="btn btn-primary" id="confirmEmailBtn">Confirm</button>
+      <button class="btn btn-outline" id="changeEmailBtn">Change email</button>
     </div>
   </div>
   <div class="setting-block">
@@ -120,9 +102,6 @@
       <a href="#features" class="nav-link" data-section="features">Features</a>
     </div>
     <div class="nav-actions">
-      <button class="theme-toggle" id="themeToggle" aria-label="Change theme" title="Change theme">
-        <i data-lucide="sun"></i>
-      </button>
       <button class="btn btn-ghost btn-sm" id="signinOpenBtn">Sign in</button>
       <button class="btn btn-primary btn-sm" id="signupOpenBtn">Sign up</button>
       <button class="profile-chip" id="profileOpenBtn" style="display:none">
@@ -144,10 +123,6 @@
   <a href="#how-it-works" class="mobile-link" onclick="closeMobileMenu()">How It Works</a>
   <a href="#upload" class="mobile-link" onclick="closeMobileMenu()">Extract</a>
   <a href="#features" class="mobile-link" onclick="closeMobileMenu()">Features</a>
-  <button class="theme-toggle mobile-theme-toggle" id="mobileThemeToggle" aria-label="Change theme">
-    <i data-lucide="sun"></i>
-    <span>Change Theme</span>
-  </button>
   <button class="btn btn-ghost" id="mobileSigninBtn" onclick="closeMobileMenu()">Sign in</button>
   <button class="btn btn-primary" id="mobileSignupBtn" onclick="closeMobileMenu()">Sign up</button>
   <button class="btn btn-ghost" id="mobileProfileBtn" style="display:none" onclick="closeMobileMenu()">Profile</button>
@@ -483,11 +458,11 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <p>Made by <strong>Shantanu Yadav</strong> — Full Stack Software Developer</p>
+      <p>Made by <strong>Shantanu Yadav</strong> — Frontend Developer</p>
     </div>
   </div>
 </footer>
 
-<script src="app.js"></script>
+<script type="module" src="app.js?v=report-name-fix-1"></script>
 </body>
 </html>
