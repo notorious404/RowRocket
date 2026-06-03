@@ -1,6 +1,6 @@
 # pdf_doc_loader.py
 import os
-from typing import Dict
+from typing import Dict, List, Any
 from PyPDF2 import PdfReader
 from docx import Document
 
@@ -17,8 +17,58 @@ def read_docx_text(path: str) -> str:
     doc = Document(path)
     parts = []
     for p in doc.paragraphs:
-        parts.append(p.text)
+        if p.text.strip():
+            parts.append(p.text)
+
+    for table_idx, table in enumerate(doc.tables, start=1):
+        rows = []
+        for row in table.rows:
+            cells = [" ".join(cell.text.split()) for cell in row.cells]
+            if any(cells):
+                rows.append(cells)
+        if not rows:
+            continue
+
+        max_cols = max(len(row) for row in rows)
+        normalized_rows = [row + [""] * (max_cols - len(row)) for row in rows]
+        headers = normalized_rows[0]
+        body_rows = normalized_rows[1:]
+
+        parts.append(f"\nDOCX TABLE {table_idx}:")
+        parts.append("| " + " | ".join(headers) + " |")
+        parts.append("| " + " | ".join(["---"] * max_cols) + " |")
+        for row in body_rows:
+            parts.append("| " + " | ".join(row) + " |")
+
     return "\n".join(parts)
+
+
+def extract_docx_tables(path: str) -> List[Dict[str, Any]]:
+    doc = Document(path)
+    tables = []
+    file_name = os.path.basename(path)
+    for table_idx, table in enumerate(doc.tables, start=1):
+        rows = []
+        for row in table.rows:
+            cells = [" ".join(cell.text.split()) for cell in row.cells]
+            if any(cells):
+                rows.append(cells)
+        if not rows:
+            continue
+
+        max_cols = max(len(row) for row in rows)
+        normalized_rows = [row + [""] * (max_cols - len(row)) for row in rows]
+        headers = normalized_rows[0]
+        body_rows = normalized_rows[1:]
+
+        tables.append({
+            "source_file": file_name,
+            "title": f"DOCX Table {table_idx}",
+            "index": table_idx,
+            "headers": headers,
+            "rows": body_rows,
+        })
+    return tables
 
 def save_and_read_uploaded_files(uploaded_files) -> Dict[str, str]:
     """
