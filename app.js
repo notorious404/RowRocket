@@ -1,6 +1,354 @@
 // app.js
 lucide.createIcons();
 
+const authState = {
+  token: localStorage.getItem('rowrocket_token') || '',
+  user: null
+};
+const ANON_TRIAL_KEY = 'rowrocket_anonymous_trial_used';
+const THEME_KEY = 'rowrocket_theme';
+const emailPattern = /^[A-Za-z][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+function authHeaders(extra = {}) {
+  return authState.token ? { ...extra, Authorization: `Bearer ${authState.token}` } : extra;
+}
+
+async function authFetch(url, options = {}) {
+  const headers = authHeaders(options.headers || {});
+  return fetch(url, { ...options, headers });
+}
+
+function openAuth(tab = 'signin') {
+  document.getElementById('authGate').classList.add('open');
+  switchAuthTab(tab);
+}
+
+function hasUsedAnonymousTrial() {
+  return localStorage.getItem(ANON_TRIAL_KEY) === '1';
+}
+
+function markAnonymousTrialUsed() {
+  localStorage.setItem(ANON_TRIAL_KEY, '1');
+}
+
+function showValidationAlert(message) {
+  alert(message);
+  showToast(message, 'error');
+}
+
+function isValidEmail(email) {
+  return emailPattern.test((email || '').trim());
+}
+
+function isStrongPassword(password) {
+  return passwordPattern.test(password || '');
+}
+
+function closeAuth() {
+  document.getElementById('authGate').classList.remove('open');
+}
+
+function switchAuthTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.authTab === tab));
+  document.getElementById('signinForm').classList.toggle('active', tab === 'signin');
+  document.getElementById('signupForm').classList.toggle('active', tab === 'signup');
+  document.getElementById('forgotForm').classList.toggle('active', tab === 'forgot');
+}
+
+function setAuth(token, user) {
+  authState.token = token;
+  authState.user = user;
+  localStorage.setItem('rowrocket_token', token);
+  if (user.theme_preference) applyTheme(user.theme_preference, { persistRemote: false });
+  renderAuthUi();
+}
+
+function clearAuth() {
+  authState.token = '';
+  authState.user = null;
+  localStorage.removeItem('rowrocket_token');
+  renderAuthUi();
+}
+
+function renderAuthUi() {
+  const signedIn = Boolean(authState.user);
+  document.getElementById('signinOpenBtn').style.display = signedIn ? 'none' : 'inline-flex';
+  document.getElementById('signupOpenBtn').style.display = signedIn ? 'none' : 'inline-flex';
+  document.getElementById('profileOpenBtn').style.display = signedIn ? 'inline-flex' : 'none';
+  document.getElementById('mobileSigninBtn').style.display = signedIn ? 'none' : 'inline-flex';
+  document.getElementById('mobileSignupBtn').style.display = signedIn ? 'none' : 'inline-flex';
+  document.getElementById('mobileProfileBtn').style.display = signedIn ? 'inline-flex' : 'none';
+  if (!signedIn) return;
+
+  document.getElementById('profileChipName').textContent = authState.user.name;
+  document.getElementById('profileName').textContent = authState.user.name;
+  document.getElementById('profileEmail').textContent = authState.user.email;
+  const remaining = Math.max(0, authState.user.free_unverified_uses - authState.user.unverified_uses);
+  document.getElementById('verifyStatus').textContent = authState.user.email_verified
+    ? 'Email verified. Your account is fully active.'
+    : `Email not verified. ${remaining} unverified extraction${remaining === 1 ? '' : 's'} remaining.`;
+  document.getElementById('settingsThemeLabel').textContent = `Current theme: ${getCurrentTheme() === 'light' ? 'Light' : 'Dark'}`;
+  lucide.createIcons();
+}
+
+function getCurrentTheme() {
+  return document.documentElement.dataset.theme || localStorage.getItem(THEME_KEY) || 'dark';
+}
+
+async function saveThemePreference(theme) {
+  if (!authState.token || !authState.user) return;
+  try {
+    const res = await authFetch('/api/auth/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme_preference: theme })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    authState.user = data.user;
+    renderAuthUi();
+  } catch (err) {
+    showToast(err.message || 'Could not save theme preference.', 'error');
+  }
+}
+
+function applyTheme(theme, options = {}) {
+  const persistRemote = options.persistRemote !== false;
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_KEY, theme);
+  document.querySelectorAll('#themeToggle i, #mobileThemeToggle i, #settingsThemeToggle i').forEach(icon => {
+    icon.setAttribute('data-lucide', theme === 'light' ? 'moon' : 'sun');
+  });
+  const label = document.getElementById('settingsThemeLabel');
+  if (label) label.textContent = `Current theme: ${theme === 'light' ? 'Light' : 'Dark'}`;
+  lucide.createIcons();
+  if (persistRemote) saveThemePreference(theme);
+}
+
+function toggleTheme() {
+  const nextTheme = getCurrentTheme() === 'light' ? 'dark' : 'light';
+  applyTheme(nextTheme);
+}
+
+async function refreshMe() {
+  if (!authState.token) {
+    renderAuthUi();
+    return;
+  }
+  try {
+    const res = await authFetch('/api/auth/me');
+    if (!res.ok) throw new Error('Session expired');
+    const data = await res.json();
+    authState.user = data.user;
+    if (data.user.theme_preference) applyTheme(data.user.theme_preference, { persistRemote: false });
+    renderAuthUi();
+  } catch {
+    clearAuth();
+  }
+}
+
+async function loadAuthHistory() {
+  if (!authState.token) return;
+  const res = await authFetch('/api/auth/history');
+  const data = await res.json();
+  const history = data.history || [];
+  document.getElementById('authHistory').innerHTML = history.length ? history.map(item => `
+    <div class="history-item">
+      <strong>${item.action.replaceAll('_', ' ')}</strong>
+      <span>${new Date(item.at).toLocaleString()} · ${item.ip}</span>
+    </div>
+  `).join('') : '<p class="profile-email">No history yet.</p>';
+}
+
+document.querySelectorAll('.auth-tab').forEach(btn => btn.addEventListener('click', () => switchAuthTab(btn.dataset.authTab)));
+document.getElementById('signinOpenBtn').addEventListener('click', () => openAuth('signin'));
+document.getElementById('signupOpenBtn').addEventListener('click', () => openAuth('signup'));
+document.getElementById('mobileSigninBtn').addEventListener('click', () => openAuth('signin'));
+document.getElementById('mobileSignupBtn').addEventListener('click', () => openAuth('signup'));
+document.getElementById('authClose').addEventListener('click', closeAuth);
+document.getElementById('forgotPasswordBtn').addEventListener('click', () => switchAuthTab('forgot'));
+document.getElementById('createAccountFirstBtn').addEventListener('click', () => switchAuthTab('signup'));
+document.getElementById('alreadyHaveAccountBtn').addEventListener('click', () => switchAuthTab('signin'));
+document.getElementById('backToSigninBtn').addEventListener('click', () => switchAuthTab('signin'));
+document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+document.getElementById('mobileThemeToggle').addEventListener('click', toggleTheme);
+document.getElementById('settingsThemeToggle').addEventListener('click', toggleTheme);
+document.getElementById('profileOpenBtn').addEventListener('click', async () => {
+  document.getElementById('profilePanel').classList.add('open');
+  await loadAuthHistory();
+});
+document.getElementById('mobileProfileBtn').addEventListener('click', async () => {
+  document.getElementById('profilePanel').classList.add('open');
+  await loadAuthHistory();
+});
+document.getElementById('profileClose').addEventListener('click', () => document.getElementById('profilePanel').classList.remove('open'));
+
+document.getElementById('signinForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const res = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: signinEmail.value, password: signinPassword.value })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setAuth(data.token, data.user);
+    closeAuth();
+    showToast('Signed in successfully.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+document.getElementById('signupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = signupEmail.value.trim();
+  const password = signupPassword.value;
+  if (!isValidEmail(email)) {
+    showValidationAlert('Enter a valid email. Email must not start with a number.');
+    return;
+  }
+  if (!isStrongPassword(password)) {
+    showValidationAlert('Password must be at least 8 characters and include uppercase, lowercase, number, and special character.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: signupName.value, email, password, theme_preference: getCurrentTheme() })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setAuth(data.token, data.user);
+    document.getElementById('devOtp').textContent = `Dev OTP: ${data.otp_dev}`;
+    closeAuth();
+    showToast('Account created. Verify your email to unlock unlimited use.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+document.getElementById('sendResetOtpBtn').addEventListener('click', async () => {
+  const email = forgotEmail.value.trim();
+  if (!isValidEmail(email)) {
+    showValidationAlert('Enter a valid email. Email must not start with a number.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('resetDevOtp').textContent = `Reset OTP: ${data.otp_dev}`;
+    showToast('Password reset code generated.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+document.getElementById('forgotForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = forgotEmail.value.trim();
+  const password = resetPassword.value;
+  if (!isValidEmail(email)) {
+    showValidationAlert('Enter a valid email. Email must not start with a number.');
+    return;
+  }
+  if (!isStrongPassword(password)) {
+    showValidationAlert('Password must be at least 8 characters and include uppercase, lowercase, number, and special character.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp: resetOtp.value, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showToast('Password updated. Please sign in.');
+    switchAuthTab('signin');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+document.getElementById('sendOtpBtn').addEventListener('click', async () => {
+  const res = await authFetch('/api/auth/send-otp', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+  document.getElementById('devOtp').textContent = `Dev OTP: ${data.otp_dev}`;
+  showToast('OTP generated.');
+});
+
+document.getElementById('verifyOtpBtn').addEventListener('click', async () => {
+  const res = await authFetch('/api/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otp: otpInput.value })
+  });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+  authState.user = data.user;
+  renderAuthUi();
+  showToast('Email verified.');
+});
+
+document.getElementById('changeEmailBtn').addEventListener('click', async () => {
+  if (!isValidEmail(newEmailInput.value)) {
+    showValidationAlert('Enter a valid email. Email must not start with a number.');
+    return;
+  }
+  const res = await authFetch('/api/auth/change-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: newEmailInput.value })
+  });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+  document.getElementById('devOtp').textContent = `Email change OTP: ${data.otp_dev}`;
+  showToast('Email change OTP generated.');
+});
+
+document.getElementById('confirmEmailBtn').addEventListener('click', async () => {
+  const res = await authFetch('/api/auth/confirm-email-change', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otp: emailChangeOtpInput.value })
+  });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+  authState.user = data.user;
+  renderAuthUi();
+  showToast('Email changed.');
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  if (authState.token) await authFetch('/api/auth/logout', { method: 'POST' });
+  clearAuth();
+  document.getElementById('profilePanel').classList.remove('open');
+  showToast('Signed out.');
+});
+
+document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+  if (!confirm('Delete this account permanently?')) return;
+  const res = await authFetch('/api/auth/delete-account', { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) return showToast(data.error, 'error');
+  clearAuth();
+  document.getElementById('profilePanel').classList.remove('open');
+  showToast('Account deleted.');
+});
+
+applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+refreshMe();
+
 // Custom Cursor
 const cursor = document.getElementById('cursor');
 const cursorFollower = document.getElementById('cursorFollower');
@@ -89,6 +437,7 @@ const progressWrap = document.getElementById('progressWrap');
 const loadingMsg = document.getElementById('loadingMsg');
 const progressBar = document.getElementById('progressBar');
 const dzContent = document.getElementById('dzContent');
+const browseLabel = document.querySelector('label[for="fileInput"]');
 
 let selectedFiles = [];
 
@@ -105,11 +454,31 @@ dropzone.addEventListener('drop', e => {
   const dt = e.dataTransfer;
   if (dt.files && dt.files.length > 0) handleFiles(dt.files);
 });
+browseLabel.addEventListener('click', e => {
+  if (!authState.user && hasUsedAnonymousTrial()) {
+    e.preventDefault();
+    openAuth('signup');
+    showToast('Please sign up and sign in to continue extracting.', 'error');
+  }
+});
+fileInput.addEventListener('click', e => {
+  if (!authState.user && hasUsedAnonymousTrial()) {
+    e.preventDefault();
+    openAuth('signup');
+    showToast('Please sign up and sign in to continue extracting.', 'error');
+  }
+});
 fileInput.addEventListener('change', function() {
   if (this.files && this.files.length > 0) handleFiles(this.files);
 });
 
 function handleFiles(files) {
+  if (!authState.user && hasUsedAnonymousTrial()) {
+    openAuth('signup');
+    showToast('Please sign up and sign in to continue extracting.', 'error');
+    fileInput.value = "";
+    return;
+  }
   selectedFiles = Array.from(files).filter(f => 
     f.name.toLowerCase().endsWith('.pdf') || 
     f.name.toLowerCase().endsWith('.docx') || 
@@ -160,6 +529,11 @@ const loadingMessages = [
 ];
 
 extractBtn.addEventListener('click', async () => {
+  if (!authState.user && hasUsedAnonymousTrial()) {
+    openAuth('signup');
+    showToast('Your free extraction is used. Please sign up and then sign in to continue.', 'error');
+    return;
+  }
   if (selectedFiles.length === 0) return;
   extractBtn.disabled = true;
   document.getElementById('extractBtnText').textContent = "Extracting...";
@@ -178,7 +552,11 @@ extractBtn.addEventListener('click', async () => {
   selectedFiles.forEach(f => formData.append('files', f));
 
   try {
-    const res = await fetch('/api/extract', { method: 'POST', body: formData });
+    const res = await fetch('/api/extract', {
+      method: 'POST',
+      headers: authState.user ? authHeaders() : { 'X-Anonymous-Trial': '1' },
+      body: formData
+    });
     clearInterval(msgInterval);
     const data = await res.json();
     
@@ -186,6 +564,15 @@ extractBtn.addEventListener('click', async () => {
     
     extractedTables = data.tables || [];
     currentReportPath = data.report_path || "";
+    if (data.anonymous_trial_used) {
+      markAnonymousTrialUsed();
+      showToast('Free extraction used. Sign up to continue using RowRocket.');
+    }
+    if (typeof data.unverified_uses_remaining === 'number') {
+      authState.user.unverified_uses = authState.user.free_unverified_uses - data.unverified_uses_remaining;
+      renderAuthUi();
+      if (data.unverified_uses_remaining > 0) showToast(`${data.unverified_uses_remaining} unverified uses remaining.`);
+    }
     
     if (extractedTables.length === 0) {
       document.getElementById('emptyState').style.display = 'block';
@@ -289,16 +676,31 @@ document.getElementById('copyAllBtn').addEventListener('click', () => {
   });
 });
 
-document.getElementById('pdfBtn').addEventListener('click', () => {
+document.getElementById('pdfBtn').addEventListener('click', async () => {
   if (!currentReportPath) return;
-  window.location.href = `/api/download-report?path=${encodeURIComponent(currentReportPath)}`;
+  try {
+    const res = await authFetch(`/api/download-report?path=${encodeURIComponent(currentReportPath)}`);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to download PDF');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentReportPath.split(/[\\/]/).pop() || 'report.pdf';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 document.getElementById('csvBtn').addEventListener('click', async () => {
   const table = extractedTables[currentTableIndex];
   if (!table) return;
   try {
-    const res = await fetch('/api/download-csv', {
+    const res = await authFetch('/api/download-csv', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(table)
